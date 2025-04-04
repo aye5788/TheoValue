@@ -8,11 +8,15 @@ st.set_page_config(page_title="Option Spread Theoretical Value", layout="wide")
 st.title("📊 Option Spread Theoretical Value Calculator")
 st.caption("Black-Scholes model (European-style). Supports multi-leg strategies like verticals, calendars, condors.")
 
+# ------------------------------
 # Initialize session state for legs
+# ------------------------------
 if "legs" not in st.session_state:
-    st.session_state.legs = [{}]  # Start with 1 leg
+    st.session_state.legs = [{}]  # Start with one leg
 
-# Black-Scholes function
+# ------------------------------
+# Black-Scholes Pricing Function
+# ------------------------------
 def black_scholes(S, K, T, r, sigma, option_type='call'):
     d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
@@ -21,7 +25,9 @@ def black_scholes(S, K, T, r, sigma, option_type='call'):
     else:
         return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
-# Global inputs
+# ------------------------------
+# Global Inputs
+# ------------------------------
 st.sidebar.header("🔧 Global Parameters")
 S = st.sidebar.number_input("Spot Price", min_value=0.0, value=5000.0)
 r = st.sidebar.number_input("Risk-Free Rate (e.g. 0.045 = 4.5%)", min_value=0.0, value=0.045)
@@ -30,7 +36,9 @@ today = date.today()
 st.markdown("---")
 st.subheader("🧱 Build Your Option Spread")
 
-# Layout
+# ------------------------------
+# Option Leg Inputs
+# ------------------------------
 cols = st.columns([1, 1, 1, 1, 1, 1, 1])
 
 for idx, leg in enumerate(st.session_state.legs):
@@ -51,32 +59,45 @@ for idx, leg in enumerate(st.session_state.legs):
         with col6:
             leg['qty'] = st.number_input(f"Contracts {idx}", min_value=1, value=1, key=f"qty_{idx}")
 
-        # Store updated leg back into session state
         st.session_state.legs[idx] = leg
 
-# --- Buttons to add/remove legs ---
-col_a, col_b = st.columns(2)
-with col_a:
+# ------------------------------
+# Add/Remove Legs Buttons
+# ------------------------------
+col_add, col_remove = st.columns(2)
+with col_add:
     if st.button("➕ Add Option Leg"):
         st.session_state.legs.append({})
-with col_b:
+with col_remove:
     if st.button("➖ Remove Last Leg") and len(st.session_state.legs) > 1:
         st.session_state.legs.pop()
 
-# --- Calculate Spread Value ---
+# ------------------------------
+# Calculate Theoretical Spread Value
+# ------------------------------
 if st.button("💰 Calculate Theoretical Value"):
     total_value = 0.0
     st.subheader("🧾 Leg Breakdown")
+
     for idx, leg in enumerate(st.session_state.legs):
         T = max((leg['expiry'] - today).days / 365, 0.0001)
         theo_price = black_scholes(S, leg['strike'], T, r, leg['iv'], leg['type'])
-        net = theo_price * leg['qty']
+
+        # Sign logic: sell = collect premium = +, buy = pay premium = -
         if leg['action'] == 'sell':
-            net *= -1
+            net = +theo_price * leg['qty']
+        else:  # buy
+            net = -theo_price * leg['qty']
+
         total_value += net
 
-        st.write(f"**Leg {idx + 1}** | {leg['action'].capitalize()} {leg['type']} @ {leg['strike']} | IV: {leg['iv']*100:.1f}% | "
-                 f"Time: {T*365:.0f} days → Theo: ${theo_price:.2f} → Value: ${net:.2f}")
+        st.write(
+            f"**Leg {idx + 1}** | {leg['action'].capitalize()} {leg['type']} @ {leg['strike']} | "
+            f"IV: {leg['iv']*100:.1f}% | Time: {(T*365):.0f} days → "
+            f"Theo: ${theo_price:.2f} → Value: {'+' if net >=0 else ''}{net:.2f}"
+        )
 
-    st.success(f"📈 **Net Theoretical Value of Spread:** ${total_value:.2f}")
+    # Final result
+    result_color = "🟢" if total_value >= 0 else "🔴"
+    st.success(f"{result_color} Net Theoretical Value of Spread: ${total_value:.2f}")
 
